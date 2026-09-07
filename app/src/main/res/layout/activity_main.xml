@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="30dp"
+    android:background="#1a1a1a">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="AGAR.IO"
+        android:textSize="48sp"
+        android:textColor="#FFFFFF"
+        android:layout_marginBottom="30dp"/>
+
+    <EditText
+        android:id="@+id/etPlayerName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Ваше имя"
+        android:textColor="#FFFFFF"
+        android:textColorHint="#888888"
+        android:background="@android:drawable/editbox_background"
+        android:padding="15dp"
+        android:layout_marginBottom="15dp"/>
+
+    <Button
+        android:id="@+id/btnCreateGame"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Создать игру (Хост)"
+        android:textSize="18sp"
+        android:background="#4CAF50"
+        android:textColor="#FFFFFF"
+        android:padding="15dp"
+        android:layout_marginBottom="15dp"/>
+
+    <Button
+        android:id="@+id/btnScan"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="🔍 Найти сервер в сети"
+        android:textSize="18sp"
+        android:background="#FF9800"
+        android:textColor="#FFFFFF"
+        android:padding="15dp"
+        android:layout_marginBottom="15dp"/>
+
+    <!-- ============================================ -->
+    <!-- СПИСОК НАЙДЕННЫХ СЕРВЕРОВ -->
+    <!-- ============================================ -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvServers"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginBottom="15dp"
+        android:background="#2a2a2a"
+        android:padding="8dp"/>
+
+    <TextView
+        android:id="@+id/tvStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Готов к игре"
+        android:textColor="#FFEB3B"
+        android:textSize="14sp"
+        android:gravity="center"
+        android:layout_marginTop="10dp"/>
+
+</LinearLayout>
