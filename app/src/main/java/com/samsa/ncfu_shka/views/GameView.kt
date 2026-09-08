@@ -55,7 +55,7 @@ class GameView(context: Context) : View(context) {
                 val player = gson.fromJson(json, Player::class.java)
                 newPlayers.add(player)
             }
-            players = newPlayers
+            players = newPlayers.filter { it.isAlive }
 
             val foodsList = state["foods"] as? List<*>
             val newFoods = mutableListOf<Food>()
