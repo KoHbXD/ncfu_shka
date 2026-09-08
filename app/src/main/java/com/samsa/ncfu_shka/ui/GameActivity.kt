@@ -215,6 +215,7 @@ class GameActivity : AppCompatActivity() {
 
         if (isHost) {
             try {
+                serviceDiscovery?.unregisterService()
                 serviceDiscovery?.cleanup()
                 serviceDiscovery = null
 

@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -17,6 +18,8 @@ import com.samsa.ncfu_shka.R
 import com.samsa.ncfu_shka.network.GameClient
 import com.samsa.ncfu_shka.network.ServiceDiscovery
 import kotlin.concurrent.thread
+import java.net.InetSocketAddress
+import java.net.Socket
 
 class MainActivity : AppCompatActivity() {
     private lateinit var etPlayerName: EditText
@@ -29,6 +32,8 @@ class MainActivity : AppCompatActivity() {
     private var serviceDiscovery: ServiceDiscovery? = null
     private var foundServers = mutableListOf<Triple<String, String, Int>>()
     private var isScanning = false
+    private var isCreatingGame = false
+    private val TIMEOUT_MS = 3000L // 3 секунды на проверку
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,12 +44,6 @@ class MainActivity : AppCompatActivity() {
         checkPermissions()
 
         serviceDiscovery = ServiceDiscovery(this)
-    }
-
-    override fun onResume() {
-        super.onResume()
-
-        foundServers.clear()
     }
 
     private fun initViews() {
@@ -93,6 +92,9 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        if (isCreatingGame) return
+        isCreatingGame = true
+
         btnCreateGame.isEnabled = false
         tvStatus.text = "Запуск сервера..."
 
@@ -106,6 +108,7 @@ class MainActivity : AppCompatActivity() {
                             Toast.makeText(this, "Сервер виден в сети!", Toast.LENGTH_SHORT).show()
                             startGameActivity("127.0.0.1", playerName, isHost = true)
                             btnCreateGame.isEnabled = true
+                            isCreatingGame = false
                         }
                     },
                     onError = { error ->
@@ -113,6 +116,7 @@ class MainActivity : AppCompatActivity() {
                             tvStatus.text = "❌ $error"
                             Toast.makeText(this, "Ошибка: $error", Toast.LENGTH_LONG).show()
                             btnCreateGame.isEnabled = true
+                            isCreatingGame = false
                         }
                     }
                 )
@@ -121,8 +125,28 @@ class MainActivity : AppCompatActivity() {
                     tvStatus.text = "❌ Ошибка: ${e.message}"
                     Toast.makeText(this, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
                     btnCreateGame.isEnabled = true
+                    isCreatingGame = false
                 }
             }
+        }
+    }
+
+    private fun getLocalIpAddress(): String {
+        return try {
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+            while (interfaces.hasMoreElements()) {
+                val networkInterface = interfaces.nextElement()
+                val addresses = networkInterface.inetAddresses
+                while (addresses.hasMoreElements()) {
+                    val address = addresses.nextElement()
+                    if (!address.isLoopbackAddress && address.hostAddress.indexOf(':') < 0) {
+                        return address.hostAddress
+                    }
+                }
+            }
+            "127.0.0.1"
+        } catch (e: Exception) {
+            "127.0.0.1"
         }
     }
 
@@ -132,20 +156,40 @@ class MainActivity : AppCompatActivity() {
 
         btnScan.isEnabled = false
         tvStatus.text = "🔍 Поиск серверов..."
-
-        // ============================================
-        // ОЧИЩАЕМ СПИСОК ПРИ НОВОМ ПОИСКЕ
-        // ============================================
         foundServers.clear()
         serverAdapter.updateList(foundServers)
 
+        val localIp = getLocalIpAddress()
+
         serviceDiscovery?.discoverServices(
             onFound = { name, ip, port ->
-                runOnUiThread {
-                    if (foundServers.none { it.second == ip && it.third == port }) {
-                        foundServers.add(Triple(name, ip, port))
-                        serverAdapter.updateList(foundServers)
-                        tvStatus.text = "✅ Найден сервер: $name"
+                // Фильтр: пропускаем свой сервер
+                if (ip == localIp) {
+                    Log.d("MainActivity", "⏭️ Пропускаем свой сервер: $name")
+                    return@discoverServices
+                }
+
+                // Проверяем, отвечает ли сервер
+                thread {
+                    val isAlive = try {
+                        val socket = Socket()
+                        socket.connect(InetSocketAddress(ip, port), 3000)
+                        socket.close()
+                        true
+                    } catch (e: Exception) {
+                        false
+                    }
+
+                    runOnUiThread {
+                        if (isAlive) {
+                            if (foundServers.none { it.second == ip && it.third == port }) {
+                                foundServers.add(Triple(name, ip, port))
+                                serverAdapter.updateList(foundServers)
+                                tvStatus.text = "✅ Найден активный сервер: $name"
+                            }
+                        } else {
+                            Log.d("MainActivity", "⏭️ Сервер не отвечает: $name")
+                        }
                     }
                 }
             },
@@ -157,13 +201,14 @@ class MainActivity : AppCompatActivity() {
             }
         )
 
+        // Останавливаем поиск через 10 секунд
         thread {
             Thread.sleep(10000)
             runOnUiThread {
                 serviceDiscovery?.stopDiscovery()
                 btnScan.isEnabled = true
                 isScanning = false
-                tvStatus.text = if (foundServers.isEmpty()) "❌ Серверы не найдены" else "✅ Поиск завершён"
+                tvStatus.text = if (foundServers.isEmpty()) "❌ Активные серверы не найдены" else "✅ Поиск завершён"
             }
         }
     }
@@ -176,7 +221,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val (name, ip, port) = server
-        tvStatus.text = "Подключение к $name ($ip:$port)..."
+        tvStatus.text = "Подключение к $name..."
 
         thread {
             try {
@@ -189,11 +234,16 @@ class MainActivity : AppCompatActivity() {
                         startGameActivity(ip, playerName, isHost = false)
                     } else {
                         Toast.makeText(this, "Не удалось подключиться", Toast.LENGTH_LONG).show()
+                        // Удаляем неработающий сервер из списка
+                        foundServers.remove(server)
+                        serverAdapter.updateList(foundServers)
                     }
                 }
             } catch (e: Exception) {
                 runOnUiThread {
                     Toast.makeText(this, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
+                    foundServers.remove(server)
+                    serverAdapter.updateList(foundServers)
                 }
             }
         }
@@ -207,5 +257,6 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         serviceDiscovery?.cleanup()
+        isScanning = false
     }
 }

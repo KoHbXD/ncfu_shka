@@ -20,7 +20,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="Ваше имя"
-        android:textColor="#FFFFFF"
+        android:textColor="#404040"
         android:textColorHint="#888888"
         android:background="@android:drawable/editbox_background"
         android:padding="15dp"

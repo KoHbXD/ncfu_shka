@@ -17,9 +17,6 @@ class ServiceDiscovery(private val context: Context) {
         private const val TAG = "ServiceDiscovery"
     }
 
-    // ============================================
-    // РЕГИСТРАЦИЯ СЕРВЕРА (Хост)
-    // ============================================
     fun registerService(port: Int, onSuccess: (String) -> Unit, onError: (String) -> Unit) {
         val serviceInfo = NsdServiceInfo().apply {
             serviceName = "AgarIo_${System.currentTimeMillis() % 10000}"
@@ -40,12 +37,12 @@ class ServiceDiscovery(private val context: Context) {
             }
 
             override fun onServiceUnregistered(serviceInfo: NsdServiceInfo?) {
-                Log.d(TAG, "Сервер отрегистрирован")
+                Log.d(TAG, "✅ Сервер отрегистрирован")
                 registeredServiceName = null
             }
 
             override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo?, errorCode: Int) {
-                Log.e(TAG, "Ошибка отрегистрации: $errorCode")
+                Log.e(TAG, "❌ Ошибка отрегистрации: $errorCode")
             }
         }
 
@@ -57,24 +54,19 @@ class ServiceDiscovery(private val context: Context) {
         }
     }
 
-    // ============================================
-    // УДАЛЕНИЕ СЕРВИСА (при остановке сервера)
-    // ============================================
     fun unregisterService() {
         registrationListener?.let {
             try {
                 nsdManager.unregisterService(it)
-                Log.d(TAG, "✅ Сервис удалён")
+                Log.d(TAG, "✅ NSD-сервис удалён")
             } catch (e: Exception) {
                 Log.e(TAG, "Ошибка удаления сервиса: ${e.message}")
             }
         }
         registeredServiceName = null
+        registrationListener = null
     }
 
-    // ============================================
-    // ПОИСК СЕРВЕРОВ (Клиент)
-    // ============================================
     fun discoverServices(onFound: (String, String, Int) -> Unit, onError: (String) -> Unit) {
         discoveryListener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String) {
@@ -129,11 +121,7 @@ class ServiceDiscovery(private val context: Context) {
         }
 
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                nsdManager.resolveService(serviceInfo, resolveListener)
-            } else {
-                nsdManager.resolveService(serviceInfo, resolveListener)
-            }
+            nsdManager.resolveService(serviceInfo, resolveListener)
         } catch (e: Exception) {
             Log.e(TAG, "Ошибка разрешения: ${e.message}")
             onError("Ошибка: ${e.message}")
@@ -151,5 +139,7 @@ class ServiceDiscovery(private val context: Context) {
     fun cleanup() {
         stopDiscovery()
         unregisterService()
+        discoveryListener = null
+        resolveListener = null
     }
 }
