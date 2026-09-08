@@ -9,5 +9,7 @@ data class Player(
     var y: Float = 0f,
     var radius: Float = 30f,
     var color: Int = 0xFF0000.toInt(),
-    var isAlive: Boolean = true
+    var isAlive: Boolean = true,
+    var isPlacingMine: Boolean = false,
+    var mineProgress: Float = 0f
 ) : Serializable

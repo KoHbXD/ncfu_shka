@@ -22,6 +22,46 @@ class GameClient {
     var onGameStateUpdate: ((Map<*, *>) -> Unit)? = null
     var onDisconnect: (() -> Unit)? = null
 
+    fun sendMineStart() {
+        try {
+            if (!isConnected || writer == null) {
+                Log.e("GameClient", "❌ Не подключено")
+                return
+            }
+            writer?.println("{\"mine\":true}")
+            writer?.flush()
+        } catch (e: Exception) {
+            Log.e("GameClient", "❌ Send error: ${e.message}")
+        }
+    }
+
+    fun sendMineStop() {
+        try {
+            if (!isConnected || writer == null) {
+                Log.e("GameClient", "❌ Не подключено")
+                return
+            }
+            writer?.println("{\"mine\":false}")
+            writer?.flush()
+        } catch (e: Exception) {
+            Log.e("GameClient", "❌ Send error: ${e.message}")
+        }
+    }
+
+    fun sendPlaceMine() {
+        try {
+            if (!isConnected || writer == null) {
+                Log.e("GameClient", "❌ Не подключено")
+                return
+            }
+            writer?.println("{\"placeMine\":true}")
+            writer?.flush()
+            Log.d("GameClient", "💣 Place mine command sent")
+        } catch (e: Exception) {
+            Log.e("GameClient", "❌ Send error: ${e.message}")
+        }
+    }
+
     fun connect(ip: String, port: Int = 8888, playerName: String): Boolean {
         return try {
             Log.d("GameClient", "🔄 Connecting to $ip:$port...")

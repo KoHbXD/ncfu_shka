@@ -25,6 +25,7 @@ class GameActivity : AppCompatActivity() {
     private var isConnecting = false
     private var isGameActive = true
     private var isHost = false
+    private var mineProgress = 0f
 
     private val handler = Handler(Looper.getMainLooper())
     private var gameLoopRunnable: Runnable? = null
@@ -44,14 +45,6 @@ class GameActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                )
-
-
         serverIp = intent.getStringExtra("SERVER_IP") ?: "127.0.0.1"
         playerName = intent.getStringExtra("PLAYER_NAME") ?: "Player"
         isHost = intent.getBooleanExtra("IS_HOST", false)
@@ -61,9 +54,14 @@ class GameActivity : AppCompatActivity() {
         Log.d(TAG, "👤 Player: $playerName")
         Log.d(TAG, "🏠 Is Host: $isHost")
 
-        // ============================================
-        // ЗАПУСКАЕМ СЕРВЕР ТОЛЬКО ЕСЛИ ЭТО ХОСТ
-        // ============================================
+        // Скрываем панель навигации
+        window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                )
+
         if (isHost) {
             startServer()
         }
@@ -88,7 +86,6 @@ class GameActivity : AppCompatActivity() {
 
     private fun startServer() {
         try {
-            // Проверяем, не запущен ли уже сервер
             if (gameServer != null) {
                 Log.w(TAG, "⚠️ Сервер уже запущен")
                 return
@@ -98,7 +95,6 @@ class GameActivity : AppCompatActivity() {
             gameServer?.start()
             Log.d(TAG, "✅ Сервер запущен")
 
-            // Регистрируем сервис для обнаружения
             if (serviceDiscovery == null) {
                 serviceDiscovery = ServiceDiscovery(this)
                 serviceDiscovery?.registerService(
@@ -152,19 +148,29 @@ class GameActivity : AppCompatActivity() {
                         Log.d(TAG, "🎮 My ID: $id")
                     }
 
+                    // ============================================
+                    // ОБРАБОТЧИКИ ДВИЖЕНИЯ
+                    // ============================================
                     gameView.onDirectionChanged = { dx, dy ->
                         thread {
                             client?.sendUpdate(dx, dy)
                         }
                     }
 
-                    gameView.onPositionUpdate = { x, y ->
-                        // Не отправляем каждое обновление
+                    // ============================================
+                    // ОБРАБОТЧИКИ МИН
+                    // ============================================
+
+                    gameView.onPlaceMine = {
+                        Log.d(TAG, "💣 Мина установлена!")
+                        thread {
+                            client?.sendPlaceMine()
+                        }
                     }
 
                     startGameLoop()
 
-                    Toast.makeText(this, "Игра запущена! Нажмите на экран для движения", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Игра запущена! Нажмите на экран для движения, два пальца для мины", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -182,11 +188,13 @@ class GameActivity : AppCompatActivity() {
             override fun run() {
                 if (!isGameActive) return
 
+                // Обновляем интерполяцию
                 gameView.updateInterpolation()
 
+                // Обновляем позицию
                 gameView.updatePosition()
 
-                handler.postDelayed(this, 16) // ~60 FPS
+                handler.postDelayed(this, 16)
             }
         }
         handler.post(gameLoopRunnable!!)
@@ -198,10 +206,8 @@ class GameActivity : AppCompatActivity() {
         Log.d(TAG, "🛑 GameActivity уничтожается")
         isGameActive = false
 
-        // Останавливаем игровой цикл
         gameLoopRunnable?.let { handler.removeCallbacks(it) }
 
-        // Отключаем клиента
         try {
             client?.disconnect()
         } catch (e: Exception) {}
@@ -223,9 +229,6 @@ class GameActivity : AppCompatActivity() {
         Log.d(TAG, "✅ GameActivity уничтожена")
     }
 
-    // ============================================
-    // ОБРАБОТКА КНОПКИ "НАЗАД"
-    // ============================================
     override fun onBackPressed() {
         if (isHost) {
             Toast.makeText(this, "Остановка сервера...", Toast.LENGTH_SHORT).show()

@@ -4,25 +4,29 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import com.google.gson.Gson
 import com.samsa.ncfu_shka.model.Food
+import com.samsa.ncfu_shka.model.Mine
 import com.samsa.ncfu_shka.model.Player
-import kotlin.math.abs
 import kotlin.math.sqrt
 
 class GameView(context: Context) : View(context) {
-    private val paint = Paint()
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val gson = Gson()
+    private val handler = Handler(Looper.getMainLooper())
+
     private var players = listOf<Player>()
     private var foods = listOf<Food>()
+    private var mines = listOf<Mine>()
     private var myPlayerId: String? = null
 
     private var renderX = 500f
     private var renderY = 500f
-
     private var targetX = 500f
     private var targetY = 500f
 
@@ -33,10 +37,16 @@ class GameView(context: Context) : View(context) {
     private var directionY = 0f
     private var isMoving = false
 
-    private val INTERPOLATION_SPEED = 8f
+    // ============================================
+    // ЛОКАЛЬНЫЙ ПРОГРЕСС МИНЫ
+    // ============================================
+    private var mineProgress = 0f
+    private var isPlacingMine = false
+    private var mineRunnable: Runnable? = null
+    private val MINE_CHARGE_TIME = 1f // секунда
 
     var onDirectionChanged: ((Float, Float) -> Unit)? = null
-    var onPositionUpdate: ((Float, Float) -> Unit)? = null
+    var onPlaceMine: (() -> Unit)? = null
 
     fun updateState(state: Map<*, *>) {
         try {
@@ -58,6 +68,15 @@ class GameView(context: Context) : View(context) {
             }
             foods = newFoods
 
+            val minesList = state["mines"] as? List<*>
+            val newMines = mutableListOf<Mine>()
+            minesList?.forEach { item ->
+                val json = gson.toJson(item)
+                val mine = gson.fromJson(json, Mine::class.java)
+                newMines.add(mine)
+            }
+            mines = newMines
+
             val myPlayer = players.find { it.id == myPlayerId }
             myPlayer?.let {
                 targetX = it.x
@@ -72,41 +91,69 @@ class GameView(context: Context) : View(context) {
 
     fun setMyPlayerId(id: String) {
         myPlayerId = id
-        Log.d("GameView", "🎮 My ID: $id")
     }
 
     fun updateInterpolation() {
-        // Плавно двигаем renderX к targetX
         val dx = targetX - renderX
         val dy = targetY - renderY
 
-        // Если разница маленькая — просто ставим точную позицию
-        if (abs(dx) < 0.1f && abs(dy) < 0.1f) {
+        if (kotlin.math.abs(dx) < 0.1f && kotlin.math.abs(dy) < 0.1f) {
             renderX = targetX
             renderY = targetY
         } else {
-            // Интерполяция с фиксированной скоростью
-            renderX += dx * 0.15f // Плавное приближение
+            renderX += dx * 0.15f
             renderY += dy * 0.15f
         }
 
-        // Обновляем камеру относительно интерполированной позиции
         viewX = renderX - width / 2f
         viewY = renderY - height / 2f
     }
 
     fun updatePosition() {
         if (!isMoving) return
-
         val length = sqrt(directionX * directionX + directionY * directionY)
         if (length == 0f) return
-
-        val normX = directionX / length
-        val normY = directionY / length
-
-        val speed = 5f
-        // Отправляем направление на сервер, но НЕ двигаем локально
         onDirectionChanged?.invoke(directionX, directionY)
+    }
+
+    // ============================================
+    // ЛОКАЛЬНАЯ УСТАНОВКА МИНЫ
+    // ============================================
+    private fun startMinePlacement() {
+        if (isPlacingMine) return
+        isPlacingMine = true
+        mineProgress = 0f
+
+        mineRunnable = object : Runnable {
+            override fun run() {
+                if (!isPlacingMine) {
+                    mineProgress = 0f
+                    invalidate()
+                    return
+                }
+
+                mineProgress += 0.05f // шаг 50ms
+                invalidate()
+
+                if (mineProgress >= 1f) {
+                    // Мина заряжена!
+                    isPlacingMine = false
+                    mineProgress = 0f
+                    onPlaceMine?.invoke()
+                    invalidate()
+                } else {
+                    handler.postDelayed(this, 50)
+                }
+            }
+        }
+        handler.post(mineRunnable!!)
+    }
+
+    private fun stopMinePlacement() {
+        isPlacingMine = false
+        mineRunnable?.let { handler.removeCallbacks(it) }
+        mineProgress = 0f
+        invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -121,68 +168,50 @@ class GameView(context: Context) : View(context) {
             return
         }
 
-        paint.color = Color.DKGRAY
-        paint.strokeWidth = 1f
-        val gridSize = 100f
+        drawGrid(canvas)
 
-        val offsetX = viewX % gridSize
-        val offsetY = viewY % gridSize
-
-        var x = -offsetX
-        while (x < width + gridSize) {
-            canvas.drawLine(x, 0f, x, height.toFloat(), paint)
-            x += gridSize
-        }
-
-        var y = -offsetY
-        while (y < height + gridSize) {
-            canvas.drawLine(0f, y, width.toFloat(), y, paint)
-            y += gridSize
-        }
-
+        // Еда
         foods.forEach { food ->
             val sx = food.x - viewX
             val sy = food.y - viewY
-
             val isVisible = sx > -100 && sx < width + 100 && sy > -100 && sy < height + 100
+            if (!isVisible) return@forEach
 
-            if (isVisible) {
-                paint.color = food.color
-                paint.style = Paint.Style.FILL
-                canvas.drawCircle(sx, sy, food.radius, paint)
+            paint.color = food.color
+            paint.style = Paint.Style.FILL
+            canvas.drawCircle(sx, sy, food.radius, paint)
 
-                paint.color = Color.WHITE
-                paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 1f
-                canvas.drawCircle(sx, sy, food.radius, paint)
-            } else {
-                val clampedX = sx.coerceIn(0f, width.toFloat())
-                val clampedY = sy.coerceIn(0f, height.toFloat())
-
-                paint.color = food.color
-                paint.style = Paint.Style.FILL
-                canvas.drawCircle(clampedX, clampedY, food.radius * 0.7f, paint)
-
-                paint.color = Color.WHITE
-                paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 1f
-                canvas.drawCircle(clampedX, clampedY, food.radius * 0.7f, paint)
-            }
+            paint.color = Color.WHITE
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 1f
+            canvas.drawCircle(sx, sy, food.radius, paint)
         }
 
+        // Мины
+        mines.forEach { mine ->
+            if (!mine.isActive) return@forEach
+
+            val sx = mine.x - viewX
+            val sy = mine.y - viewY
+            val isVisible = sx > -50 && sx < width + 50 && sy > -50 && sy < height + 50
+            if (!isVisible) return@forEach
+
+            val isMyMine = mine.ownerId == myPlayerId
+            paint.color = if (isMyMine) Color.YELLOW else Color.RED
+            paint.style = Paint.Style.FILL
+            canvas.drawCircle(sx, sy, mine.radius, paint)
+
+            paint.color = Color.BLACK
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 2f
+            canvas.drawCircle(sx, sy, mine.radius, paint)
+        }
+
+        // Игроки
         players.forEach { player ->
-            // Для своего игрока используем интерполированную позицию
             val isMyPlayer = player.id == myPlayerId
-            val sx = if (isMyPlayer) {
-                renderX - viewX
-            } else {
-                player.x - viewX
-            }
-            val sy = if (isMyPlayer) {
-                renderY - viewY
-            } else {
-                player.y - viewY
-            }
+            val sx = if (isMyPlayer) renderX - viewX else player.x - viewX
+            val sy = if (isMyPlayer) renderY - viewY else player.y - viewY
 
             paint.color = player.color
             paint.style = Paint.Style.FILL
@@ -200,6 +229,32 @@ class GameView(context: Context) : View(context) {
             val name = if (isMyPlayer) "${player.name} (ты)" else player.name
             canvas.drawText(name, sx, sy + 5, paint)
 
+            // ============================================
+            // ПРОГРЕСС-БАР МИНЫ (локальный)
+            // ============================================
+            if (isMyPlayer && mineProgress > 0f) {
+                val maxRadius = player.radius * 1.15f
+                val currentRadius = player.radius + (maxRadius - player.radius) * mineProgress
+
+                paint.color = Color.RED
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 4f
+                canvas.drawCircle(sx, sy, currentRadius, paint)
+
+                // Заполнение
+                val fillRadius = player.radius * 0.4f * mineProgress
+                paint.color = Color.argb(150, 255, 0, 0)
+                paint.style = Paint.Style.FILL
+                canvas.drawCircle(sx, sy, fillRadius + player.radius * 0.2f, paint)
+
+                // Текст прогресса
+                paint.color = Color.WHITE
+                paint.textSize = 16f
+                paint.textAlign = Paint.Align.CENTER
+                val percent = (mineProgress * 100).toInt()
+                canvas.drawText("$percent%", sx, sy + 5, paint)
+            }
+
             if (isMyPlayer && isMoving) {
                 paint.color = Color.YELLOW
                 paint.strokeWidth = 3f
@@ -207,6 +262,7 @@ class GameView(context: Context) : View(context) {
             }
         }
 
+        // UI
         val myPlayer = players.find { it.id == myPlayerId }
         myPlayer?.let {
             paint.color = Color.WHITE
@@ -216,42 +272,84 @@ class GameView(context: Context) : View(context) {
             canvas.drawText("Размер: ${it.radius.toInt()}", 20f, 50f, paint)
             canvas.drawText("Игроков: ${players.size}", 20f, 90f, paint)
             canvas.drawText("Еды: ${foods.size}", 20f, 130f, paint)
-            canvas.drawText("X: ${renderX.toInt()}, Y: ${renderY.toInt()}", 20f, 170f, paint)
+            canvas.drawText("Мин: ${mines.size}", 20f, 170f, paint)
+        }
+    }
+
+    private fun drawGrid(canvas: Canvas) {
+        val gridSize = 100f
+        val offsetX = viewX % gridSize
+        val offsetY = viewY % gridSize
+
+        paint.color = Color.DKGRAY
+        paint.strokeWidth = 1f
+
+        var x = -offsetX
+        while (x < width + gridSize) {
+            canvas.drawLine(x, 0f, x, height.toFloat(), paint)
+            x += gridSize
+        }
+
+        var y = -offsetY
+        while (y < height + gridSize) {
+            canvas.drawLine(0f, y, width.toFloat(), y, paint)
+            y += gridSize
         }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        when (event.action) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
-                val myPlayer = players.find { it.id == myPlayerId }
-                myPlayer?.let {
-                    // Используем интерполированную позицию для расчёта направления
-                    val centerX = renderX - viewX
-                    val centerY = renderY - viewY
-
-                    directionX = event.x - centerX
-                    directionY = event.y - centerY
-
-                    val length = sqrt(directionX * directionX + directionY * directionY)
-                    if (length > 0) {
-                        directionX = directionX / length * 100
-                        directionY = directionY / length * 100
-                    }
-
-                    isMoving = true
-                    // Отправляем направление на сервер
-                    onDirectionChanged?.invoke(directionX, directionY)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                if (event.pointerCount == 1) {
+                    handleSingleTouch(event)
                 }
                 return true
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                isMoving = false
-                directionX = 0f
-                directionY = 0f
-                onDirectionChanged?.invoke(0f, 0f)
+            MotionEvent.ACTION_MOVE -> {
+                if (event.pointerCount == 1) {
+                    handleSingleTouch(event)
+                }
+                return true
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                if (event.pointerCount == 2) {
+                    Log.d("GameView", "💣 Начало установки мины")
+                    startMinePlacement()
+                }
+                return true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                if (event.pointerCount <= 2) {
+                    if (isPlacingMine) {
+                        Log.d("GameView", "💣 Установка мины отменена")
+                        stopMinePlacement()
+                    }
+                    isMoving = false
+                    directionX = 0f
+                    directionY = 0f
+                }
                 return true
             }
         }
         return super.onTouchEvent(event)
+    }
+
+    private fun handleSingleTouch(event: MotionEvent) {
+        val myPlayer = players.find { it.id == myPlayerId } ?: return
+
+        val centerX = renderX - viewX
+        val centerY = renderY - viewY
+
+        directionX = event.x - centerX
+        directionY = event.y - centerY
+
+        val length = sqrt(directionX * directionX + directionY * directionY)
+        if (length > 0) {
+            directionX = directionX / length * 100
+            directionY = directionY / length * 100
+        }
+
+        isMoving = true
+        onDirectionChanged?.invoke(directionX, directionY)
     }
 }
