@@ -2,11 +2,13 @@ package com.samsa.ncfu_shka.ui
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.samsa.ncfu_shka.network.GameClient
@@ -44,6 +46,23 @@ class GameActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_FULLSCREEN,
+            WindowManager.LayoutParams.FLAG_FULLSCREEN
+        )
+
+        window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                        View.SYSTEM_UI_FLAG_FULLSCREEN or
+                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                )
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
 
         serverIp = intent.getStringExtra("SERVER_IP") ?: "127.0.0.1"
         playerName = intent.getStringExtra("PLAYER_NAME") ?: "Player"
@@ -117,7 +136,7 @@ class GameActivity : AppCompatActivity() {
         if (isConnecting) return
         isConnecting = true
 
-        Toast.makeText(this, "Подключение к серверу...", Toast.LENGTH_SHORT).show()
+        //Toast.makeText(this, "Подключение к серверу...", Toast.LENGTH_SHORT).show()
 
         thread {
             try {
@@ -170,7 +189,7 @@ class GameActivity : AppCompatActivity() {
 
                     startGameLoop()
 
-                    Toast.makeText(this, "Игра запущена! Нажмите на экран для движения, два пальца для мины", Toast.LENGTH_LONG).show()
+                    //Toast.makeText(this, "Игра запущена! Нажмите на экран для движения, два пальца для мины", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -232,7 +251,7 @@ class GameActivity : AppCompatActivity() {
 
     override fun onBackPressed() {
         if (isHost) {
-            Toast.makeText(this, "Остановка сервера...", Toast.LENGTH_SHORT).show()
+            //Toast.makeText(this, "Остановка сервера...", Toast.LENGTH_SHORT).show()
         }
         super.onBackPressed()
     }

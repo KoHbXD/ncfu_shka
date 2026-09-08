@@ -2,7 +2,7 @@ package com.samsa.ncfu_shka.model
 
 import java.io.Serializable
 
-data class Player(
+open class Player(
     val id: String,
     var name: String = "Player",
     var x: Float = 0f,

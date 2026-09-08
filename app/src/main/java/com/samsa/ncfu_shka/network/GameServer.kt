@@ -2,6 +2,8 @@ package com.samsa.ncfu_shka.network
 
 import android.util.Log
 import com.google.gson.Gson
+import com.samsa.ncfu_shka.model.Bot
+import com.samsa.ncfu_shka.model.BotState
 import com.samsa.ncfu_shka.model.Food
 import com.samsa.ncfu_shka.model.Mine
 import com.samsa.ncfu_shka.model.Player
@@ -37,6 +39,9 @@ class GameServer(private val port: Int = 8888) {
     private val MINE_DAMAGE = 0.5f // 50%
     private val MIN_SIZE_TO_SURVIVE = 50f
 
+    private val bots = mutableListOf<Bot>()
+    private val BOT_COUNT = 5  // Количество ботов
+
     fun start() {
         try {
             serverSocket = ServerSocket(port)
@@ -44,6 +49,7 @@ class GameServer(private val port: Int = 8888) {
             Log.d("GameServer", "✅ Server started on port $port")
 
             generateFood(FOOD_COUNT)
+            createBots()
 
             Thread {
                 while (isRunning) {
@@ -104,6 +110,7 @@ class GameServer(private val port: Int = 8888) {
 
                         updateGame()
                         broadcastState()
+                        updateBots()
 
                         Thread.sleep(16)
                     } catch (e: Exception) {
@@ -115,6 +122,153 @@ class GameServer(private val port: Int = 8888) {
         } catch (e: Exception) {
             Log.e("GameServer", "Failed to start: ${e.message}")
         }
+    }
+
+    private fun createBots() {
+        for (i in 1..BOT_COUNT) {
+            val bot = Bot(
+                id = "BOT_$i",
+                name = if (i == 1) "Самирчик" else if (i == 2) "Женька" else "Bot$i",
+                color = Random.nextInt(0xFFFFFF),
+                x = Random.nextFloat() * (MAP_SIZE - 200) + 100,
+                y = Random.nextFloat() * (MAP_SIZE - 200) + 100,
+                radius = Random.nextFloat() * 60 + 20
+            )
+            bots.add(bot)
+            players.add(bot)
+            Log.d("GameServer", "🤖 Бот ${bot.name} создан! Размер: ${bot.radius}")
+        }
+    }
+
+    private fun updateBots() {
+        val now = System.currentTimeMillis()
+
+        bots.forEach { bot ->
+            if (!bot.isAlive) return@forEach
+
+            // Каждые 300 мс пересчитываем цель
+            if (now - bot.updateTimer > 300) {
+                bot.updateTimer = now
+                updateBotTarget(bot)
+            }
+
+            // Движение к цели
+            val dx = bot.targetX - bot.x
+            val dy = bot.targetY - bot.y
+            val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+
+            if (dist > 5f) {
+                val speed = 3f
+                bot.x += (dx / dist) * speed
+                bot.y += (dy / dist) * speed
+            }
+        }
+    }
+
+    private fun updateBotTarget(bot: Bot) {
+        var nearestDanger: Player? = null
+        var nearestDangerDist = Float.MAX_VALUE
+
+        var nearestFood: Food? = null
+        var nearestFoodDist = Float.MAX_VALUE
+
+        var nearestPlayer: Player? = null
+        var nearestPlayerDist = Float.MAX_VALUE
+
+        // Проверяем всех игроков
+        players.forEach { player ->
+            if (player.id == bot.id || !player.isAlive) return@forEach
+
+            val dx = player.x - bot.x
+            val dy = player.y - bot.y
+            val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+
+            // Если игрок больше бота — он опасен
+            if (player.radius > bot.radius * 1.21f && dist < (bot.radius*3f)) {
+                if (dist < nearestDangerDist) {
+                    nearestDanger = player
+                    nearestDangerDist = dist
+                }
+            }
+
+            // Если игрок меньше бота — он цель
+            if (player.radius < bot.radius * 0.79f && dist < (bot.radius*4f)) {
+                if (dist < nearestPlayerDist) {
+                    nearestPlayer = player
+                    nearestPlayerDist = dist
+                }
+            }
+        }
+
+        // Ищем еду (если нужно вообще)
+        if (bot.radius < 350f) {
+            foods.forEach { food ->
+                val dx = food.x - bot.x
+                val dy = food.y - bot.y
+                val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                if (dist < nearestFoodDist) {
+                    nearestFood = food
+                    nearestFoodDist = dist
+                }
+            }
+        }
+
+        // Принимаем решение
+        when {
+            // 1. Если опасность рядом — убегаем
+            nearestDanger != null && nearestDangerDist < (bot.radius*3f) -> {
+                bot.state = BotState.FLEEING
+                val dx = bot.x - nearestDanger!!.x
+                val dy = bot.y - nearestDanger!!.y
+                val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                if (dist > 0) {
+                    bot.targetX = bot.x + (dx / dist) * 200f
+                    bot.targetY = bot.y + (dy / dist) * 200f
+                }
+            }
+            // 2. Если есть цель меньше бота — преследуем
+            nearestPlayer != null && nearestPlayerDist < (bot.radius*4f) -> {
+                bot.state = BotState.CHASING
+                bot.targetX = nearestPlayer!!.x
+                bot.targetY = nearestPlayer!!.y
+            }
+            // 3. Иначе ищем еду
+            nearestFood != null -> {
+                bot.state = BotState.WANDERING
+                bot.targetX = nearestFood!!.x
+                bot.targetY = nearestFood!!.y
+            }
+            // 4. Нет еды — бродим случайно
+            else -> {
+                bot.state = BotState.WANDERING
+                bot.targetX = Random.nextFloat() * (MAP_SIZE - 200) + 100
+                bot.targetY = Random.nextFloat() * (MAP_SIZE - 200) + 100
+            }
+        }
+
+        // Ограничиваем картой
+        bot.targetX = bot.targetX.coerceIn(50f, MAP_SIZE - 50f)
+        bot.targetY = bot.targetY.coerceIn(50f, MAP_SIZE - 50f)
+    }
+
+    private fun respawnBot(bot: Bot) {
+        var newX: Float
+        var newY: Float
+        var attempts = 0
+        do {
+            newX = Random.nextFloat() * (MAP_SIZE - 200) + 100
+            newY = Random.nextFloat() * (MAP_SIZE - 200) + 100
+            attempts++
+        } while (attempts < 50 && !isSafePosition(newX, newY))
+
+        bot.x = newX
+        bot.y = newY
+        bot.radius = Random.nextFloat() * 30 + 20
+        bot.isAlive = true
+        bot.targetX = newX
+        bot.targetY = newY
+
+        Log.d("GameServer", "💫 Бот ${bot.name} воскрес!")
     }
 
     private fun placeMine(player: Player) {
@@ -164,9 +318,6 @@ class GameServer(private val port: Int = 8888) {
         }
     }
 
-    // ============================================
-// СБОР ЕДЫ
-// ============================================
     private fun collectFood() {
         val toRemove = mutableListOf<Food>()
         players.forEach { player ->
@@ -190,9 +341,6 @@ class GameServer(private val port: Int = 8888) {
         }
     }
 
-    // ============================================
-// ПРОВЕРКА МИН
-// ============================================
     private fun checkMines() {
         val minesToRemove = mutableListOf<Mine>()
         mines.forEach { mine ->
@@ -224,9 +372,6 @@ class GameServer(private val port: Int = 8888) {
         mines.removeAll(minesToRemove)
     }
 
-    // ============================================
-// ПОЕДАНИЕ ИГРОКОВ
-// ============================================
     private fun checkPlayerEat() {
         val playersCopy = players.toList()
         playersCopy.forEach { player1 ->
@@ -257,13 +402,21 @@ class GameServer(private val port: Int = 8888) {
         }
     }
 
-    // ============================================
-// СМЕРТЬ И ВОСКРЕШЕНИЕ
-// ============================================
     private fun killPlayer(player: Player, reason: String) {
         if (!player.isAlive) return
 
         player.isAlive = false
+
+        if (player is Bot) {
+            // Бот воскресает без задержки
+            respawnBot(player)
+            return
+        }
+
+        val playerMines = mines.filter { it.ownerId == player.id }
+        if (playerMines.isNotEmpty()) {
+            mines.removeAll(playerMines)
+        }
 
         // Отправляем клиенту сообщение о смерти
         val deathMessage = gson.toJson(mapOf(
@@ -459,6 +612,7 @@ class GameServer(private val port: Int = 8888) {
         mines.clear()
         directions.clear()
         mineProgress.clear()
+        bots.clear()
         Log.d("GameServer", "✅ Server stopped")
     }
 }

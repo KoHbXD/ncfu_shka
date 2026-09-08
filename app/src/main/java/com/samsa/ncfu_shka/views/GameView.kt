@@ -222,15 +222,15 @@ class GameView(context: Context) : View(context) {
 
             paint.color = Color.WHITE
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 2f
+            paint.strokeWidth = 5f
             canvas.drawCircle(sx, sy, player.radius, paint)
 
             paint.color = Color.WHITE
             paint.style = Paint.Style.FILL
-            paint.textSize = 20f
+            paint.textSize = 24f
             paint.textAlign = Paint.Align.CENTER
             val name = if (isMyPlayer) "${player.name} (ты)" else player.name
-            canvas.drawText(name, sx, sy + 5, paint)
+            canvas.drawText(name, sx, sy - (player.radius*1.2f), paint)
 
             // ============================================
             // ПРОГРЕСС-БАР МИНЫ (локальный)
@@ -249,13 +249,6 @@ class GameView(context: Context) : View(context) {
                 paint.color = Color.argb(150, 255, 0, 0)
                 paint.style = Paint.Style.FILL
                 canvas.drawCircle(sx, sy, fillRadius + player.radius * 0.2f, paint)
-
-                // Текст прогресса
-                paint.color = Color.WHITE
-                paint.textSize = 16f
-                paint.textAlign = Paint.Align.CENTER
-                val percent = (mineProgress * 100).toInt()
-                canvas.drawText("$percent%", sx, sy + 5, paint)
             }
 
             if (isMyPlayer && isMoving) {
@@ -272,26 +265,25 @@ class GameView(context: Context) : View(context) {
             paint.textSize = 30f
             paint.textAlign = Paint.Align.LEFT
             paint.style = Paint.Style.FILL
-            canvas.drawText("Размер: ${it.radius.toInt()}", 20f, 50f, paint)
-            canvas.drawText("Игроков: ${players.size}", 20f, 90f, paint)
-            canvas.drawText("Еды: ${foods.size}", 20f, 130f, paint)
-            canvas.drawText("Мин: ${mines.size}", 20f, 170f, paint)
+            canvas.drawText("Размер: ${it.radius.toInt()}", 25f, 50f, paint)
+            canvas.drawText("Игроков: ${players.size}", 25f, 90f, paint)
+            canvas.drawText("Мин: ${mines.size}", 25f, 130f, paint)
         }
 
         if (topPlayers.isNotEmpty()) {
             paint.color = Color.YELLOW
-            paint.textSize = 24f
+            paint.textSize = 48f
             paint.textAlign = Paint.Align.RIGHT
             paint.style = Paint.Style.FILL
-            var yPos = 50f
-            canvas.drawText("🏆 Топ игроков:", width - 20f, yPos, paint)
-            yPos += 35f
+            var yPos = 55f
+            canvas.drawText("🏆 Топ игроков:", width - 25f, yPos, paint)
+            yPos += 50f
 
             topPlayers.forEach { playerInfo ->
                 paint.color = Color.WHITE
-                paint.textSize = 20f
-                canvas.drawText(playerInfo, width - 20f, yPos, paint)
-                yPos += 30f
+                paint.textSize = 34f
+                canvas.drawText(playerInfo, width - 25f, yPos, paint)
+                yPos += 35f
             }
         }
 
