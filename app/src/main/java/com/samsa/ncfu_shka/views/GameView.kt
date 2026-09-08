@@ -10,6 +10,7 @@ import android.view.View
 import com.google.gson.Gson
 import com.samsa.ncfu_shka.model.Food
 import com.samsa.ncfu_shka.model.Player
+import kotlin.math.abs
 import kotlin.math.sqrt
 
 class GameView(context: Context) : View(context) {
@@ -19,14 +20,20 @@ class GameView(context: Context) : View(context) {
     private var foods = listOf<Food>()
     private var myPlayerId: String? = null
 
+    private var renderX = 500f
+    private var renderY = 500f
+
+    private var targetX = 500f
+    private var targetY = 500f
+
     private var viewX = 0f
     private var viewY = 0f
 
     private var directionX = 0f
     private var directionY = 0f
     private var isMoving = false
-    private var currentX = 500f
-    private var currentY = 500f
+
+    private val INTERPOLATION_SPEED = 8f
 
     var onDirectionChanged: ((Float, Float) -> Unit)? = null
     var onPositionUpdate: ((Float, Float) -> Unit)? = null
@@ -53,10 +60,8 @@ class GameView(context: Context) : View(context) {
 
             val myPlayer = players.find { it.id == myPlayerId }
             myPlayer?.let {
-                currentX = it.x
-                currentY = it.y
-                viewX = it.x - width / 2f
-                viewY = it.y - height / 2f
+                targetX = it.x
+                targetY = it.y
             }
 
             invalidate()
@@ -70,6 +75,26 @@ class GameView(context: Context) : View(context) {
         Log.d("GameView", "🎮 My ID: $id")
     }
 
+    fun updateInterpolation() {
+        // Плавно двигаем renderX к targetX
+        val dx = targetX - renderX
+        val dy = targetY - renderY
+
+        // Если разница маленькая — просто ставим точную позицию
+        if (abs(dx) < 0.1f && abs(dy) < 0.1f) {
+            renderX = targetX
+            renderY = targetY
+        } else {
+            // Интерполяция с фиксированной скоростью
+            renderX += dx * 0.15f // Плавное приближение
+            renderY += dy * 0.15f
+        }
+
+        // Обновляем камеру относительно интерполированной позиции
+        viewX = renderX - width / 2f
+        viewY = renderY - height / 2f
+    }
+
     fun updatePosition() {
         if (!isMoving) return
 
@@ -80,14 +105,8 @@ class GameView(context: Context) : View(context) {
         val normY = directionY / length
 
         val speed = 5f
-        currentX += normX * speed
-        currentY += normY * speed
-
-        viewX = currentX - width / 2f
-        viewY = currentY - height / 2f
-
-        onPositionUpdate?.invoke(currentX, currentY)
-        invalidate()
+        // Отправляем направление на сервер, но НЕ двигаем локально
+        onDirectionChanged?.invoke(directionX, directionY)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -102,9 +121,6 @@ class GameView(context: Context) : View(context) {
             return
         }
 
-        // ============================================
-        // СЕТКА — ВО ВЕСЬ ЭКРАН
-        // ============================================
         paint.color = Color.DKGRAY
         paint.strokeWidth = 1f
         val gridSize = 100f
@@ -124,18 +140,10 @@ class GameView(context: Context) : View(context) {
             y += gridSize
         }
 
-        // ============================================
-        // ЕДА — С ОТОБРАЖЕНИЕМ ПО КРАЯМ ЭКРАНА
-        // ============================================
         foods.forEach { food ->
             val sx = food.x - viewX
             val sy = food.y - viewY
 
-            // Если еда за пределами экрана — рисуем на границе
-            val clampedX = sx.coerceIn(0f, width.toFloat())
-            val clampedY = sy.coerceIn(0f, height.toFloat())
-
-            // Если еда далеко за пределами — не рисуем вообще
             val isVisible = sx > -100 && sx < width + 100 && sy > -100 && sy < height + 100
 
             if (isVisible) {
@@ -148,7 +156,9 @@ class GameView(context: Context) : View(context) {
                 paint.strokeWidth = 1f
                 canvas.drawCircle(sx, sy, food.radius, paint)
             } else {
-                // Рисуем на границе (уменьшенную копию)
+                val clampedX = sx.coerceIn(0f, width.toFloat())
+                val clampedY = sy.coerceIn(0f, height.toFloat())
+
                 paint.color = food.color
                 paint.style = Paint.Style.FILL
                 canvas.drawCircle(clampedX, clampedY, food.radius * 0.7f, paint)
@@ -160,12 +170,19 @@ class GameView(context: Context) : View(context) {
             }
         }
 
-        // ============================================
-        // ИГРОКИ
-        // ============================================
         players.forEach { player ->
-            val sx = player.x - viewX
-            val sy = player.y - viewY
+            // Для своего игрока используем интерполированную позицию
+            val isMyPlayer = player.id == myPlayerId
+            val sx = if (isMyPlayer) {
+                renderX - viewX
+            } else {
+                player.x - viewX
+            }
+            val sy = if (isMyPlayer) {
+                renderY - viewY
+            } else {
+                player.y - viewY
+            }
 
             paint.color = player.color
             paint.style = Paint.Style.FILL
@@ -180,19 +197,16 @@ class GameView(context: Context) : View(context) {
             paint.style = Paint.Style.FILL
             paint.textSize = 20f
             paint.textAlign = Paint.Align.CENTER
-            val name = if (player.id == myPlayerId) "${player.name} (ты)" else player.name
+            val name = if (isMyPlayer) "${player.name} (ты)" else player.name
             canvas.drawText(name, sx, sy + 5, paint)
 
-            if (player.id == myPlayerId && isMoving) {
+            if (isMyPlayer && isMoving) {
                 paint.color = Color.YELLOW
                 paint.strokeWidth = 3f
                 canvas.drawLine(sx, sy, sx + directionX * 2, sy + directionY * 2, paint)
             }
         }
 
-        // ============================================
-        // UI — ИНФОРМАЦИЯ В УГЛУ
-        // ============================================
         val myPlayer = players.find { it.id == myPlayerId }
         myPlayer?.let {
             paint.color = Color.WHITE
@@ -202,7 +216,7 @@ class GameView(context: Context) : View(context) {
             canvas.drawText("Размер: ${it.radius.toInt()}", 20f, 50f, paint)
             canvas.drawText("Игроков: ${players.size}", 20f, 90f, paint)
             canvas.drawText("Еды: ${foods.size}", 20f, 130f, paint)
-            canvas.drawText("X: ${it.x.toInt()}, Y: ${it.y.toInt()}", 20f, 170f, paint)
+            canvas.drawText("X: ${renderX.toInt()}, Y: ${renderY.toInt()}", 20f, 170f, paint)
         }
     }
 
@@ -211,8 +225,9 @@ class GameView(context: Context) : View(context) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
                 val myPlayer = players.find { it.id == myPlayerId }
                 myPlayer?.let {
-                    val centerX = it.x - viewX
-                    val centerY = it.y - viewY
+                    // Используем интерполированную позицию для расчёта направления
+                    val centerX = renderX - viewX
+                    val centerY = renderY - viewY
 
                     directionX = event.x - centerX
                     directionY = event.y - centerY
@@ -224,6 +239,7 @@ class GameView(context: Context) : View(context) {
                     }
 
                     isMoving = true
+                    // Отправляем направление на сервер
                     onDirectionChanged?.invoke(directionX, directionY)
                 }
                 return true

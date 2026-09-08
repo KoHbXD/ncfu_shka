@@ -182,17 +182,16 @@ class GameActivity : AppCompatActivity() {
             override fun run() {
                 if (!isGameActive) return
 
+                gameView.updateInterpolation()
+
                 gameView.updatePosition()
 
-                handler.postDelayed(this, 50)
+                handler.postDelayed(this, 16) // ~60 FPS
             }
         }
         handler.post(gameLoopRunnable!!)
     }
 
-    // ============================================
-    // ОСТАНОВКА ВСЕГО ПРИ ВЫХОДЕ
-    // ============================================
     override fun onDestroy() {
         super.onDestroy()
 
@@ -208,9 +207,6 @@ class GameActivity : AppCompatActivity() {
         } catch (e: Exception) {}
         client = null
 
-        // ============================================
-        // ОСТАНАВЛИВАЕМ СЕРВЕР (если это хост)
-        // ============================================
         if (isHost) {
             try {
                 serviceDiscovery?.cleanup()
