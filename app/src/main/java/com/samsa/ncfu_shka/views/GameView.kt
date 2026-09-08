@@ -23,6 +23,7 @@ class GameView(context: Context) : View(context) {
     private var players = listOf<Player>()
     private var foods = listOf<Food>()
     private var mines = listOf<Mine>()
+    private var topPlayers = listOf<String>()
     private var myPlayerId: String? = null
 
     private var renderX = 500f
@@ -73,6 +74,9 @@ class GameView(context: Context) : View(context) {
                 newMines.add(mine)
             }
             mines = newMines
+
+            @Suppress("UNCHECKED_CAST")
+            topPlayers = state["topPlayers"] as? List<String> ?: emptyList()
 
             val myPlayer = players.find { it.id == myPlayerId }
             myPlayer?.let {
@@ -273,6 +277,24 @@ class GameView(context: Context) : View(context) {
             canvas.drawText("Еды: ${foods.size}", 20f, 130f, paint)
             canvas.drawText("Мин: ${mines.size}", 20f, 170f, paint)
         }
+
+        if (topPlayers.isNotEmpty()) {
+            paint.color = Color.YELLOW
+            paint.textSize = 24f
+            paint.textAlign = Paint.Align.RIGHT
+            paint.style = Paint.Style.FILL
+            var yPos = 50f
+            canvas.drawText("🏆 Топ игроков:", width - 20f, yPos, paint)
+            yPos += 35f
+
+            topPlayers.forEach { playerInfo ->
+                paint.color = Color.WHITE
+                paint.textSize = 20f
+                canvas.drawText(playerInfo, width - 20f, yPos, paint)
+                yPos += 30f
+            }
+        }
+
     }
 
     private fun drawMapBorder(canvas: Canvas) {

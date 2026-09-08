@@ -11,5 +11,6 @@ data class Player(
     var color: Int = 0xFF0000.toInt(),
     var isAlive: Boolean = true,
     var isPlacingMine: Boolean = false,
-    var mineProgress: Float = 0f
+    var mineProgress: Float = 0f,
+    var score: Int = 0
 ) : Serializable

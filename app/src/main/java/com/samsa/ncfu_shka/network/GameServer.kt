@@ -22,6 +22,7 @@ class GameServer(private val port: Int = 8888) {
     private val mines = CopyOnWriteArrayList<Mine>()
     private val directions = ConcurrentHashMap<String, Pair<Float, Float>>()
     private val mineProgress = ConcurrentHashMap<String, Float>()
+    private val respawnQueue = ConcurrentHashMap<String, Long>() // playerId -> время воскрешения
     private val gson = Gson()
 
     private var isRunning = false
@@ -147,108 +148,219 @@ class GameServer(private val port: Int = 8888) {
     private fun updateGame() {
         try {
             // Сбор еды (с ограничением размера)
-            val toRemove = mutableListOf<Food>()
-            players.forEach { player ->
-                if (!player.isAlive) return@forEach
-                if (player.radius >= MAX_SIZE) return@forEach
-
-                foods.forEach { food ->
-                    val dx = player.x - food.x
-                    val dy = player.y - food.y
-                    val distance = kotlin.math.sqrt(dx * dx + dy * dy)
-                    if (distance < player.radius + food.radius) {
-                        player.radius += 0.5f
-                        toRemove.add(food)
-                    }
-                }
-            }
-            foods.removeAll(toRemove)
-
-            if (foods.size < FOOD_COUNT) {
-                generateFood(FOOD_COUNT - foods.size)
-            }
+            collectFood()
 
             // Проверка мин
-            val minesToRemove = mutableListOf<Mine>()
-            mines.forEach { mine ->
-                players.forEach { player ->
-                    if (!player.isAlive) return@forEach
-                    if (player.id == mine.ownerId) return@forEach
-
-                    val dx = player.x - mine.x
-                    val dy = player.y - mine.y
-                    val distance = kotlin.math.sqrt(dx * dx + dy * dy)
-
-                    if (distance < player.radius + mine.radius) {
-                        // Взрыв!
-                        val damage = player.radius * MINE_DAMAGE
-                        player.radius -= damage
-                        minesToRemove.add(mine)
-
-                        Log.d("GameServer", "💥 ${player.name} подорвался на мине! Размер: ${player.radius}")
-
-                        if (player.radius < MIN_SIZE_TO_SURVIVE) {
-                            player.isAlive = false
-                            player.x = Random.nextFloat() * (MAP_SIZE - 200) + 100
-                            player.y = Random.nextFloat() * (MAP_SIZE - 200) + 100
-                            player.radius = 30f
-                            player.isAlive = true
-                            Log.d("GameServer", "💀 ${player.name} был убит миной!")
-                        }
-                    }
-                }
-            }
-            mines.removeAll(minesToRemove)
+            checkMines()
 
             // Поедание игроков
-            val playersCopy = players.toList()
-            playersCopy.forEach { player1 ->
-                playersCopy.forEach { player2 ->
-                    if (player1.id != player2.id && player2.isAlive && player1.isAlive) {
-                        val dx = player1.x - player2.x
-                        val dy = player1.y - player2.y
-                        val distance = kotlin.math.sqrt(dx * dx + dy * dy)
+            checkPlayerEat()
 
-                        if (distance < player1.radius + player2.radius) {
-                            if (player1.radius > player2.radius * 1.2f) {
-                                val gain = (player2.radius * 0.3f).coerceAtMost(MAX_SIZE - player1.radius)
-                                player1.radius += gain
-                                player2.isAlive = false
-                                Log.d("GameServer", "🍽️ ${player1.name} ate ${player2.name}!")
-
-                                player2.x = Random.nextFloat() * (MAP_SIZE - 200) + 100
-                                player2.y = Random.nextFloat() * (MAP_SIZE - 200) + 100
-                                player2.radius = 30f
-                                player2.isAlive = true
-                            } else if (player2.radius > player1.radius * 1.2f) {
-                                val gain = (player1.radius * 0.3f).coerceAtMost(MAX_SIZE - player2.radius)
-                                player2.radius += gain
-                                player1.isAlive = false
-                                Log.d("GameServer", "🍽️ ${player2.name} ate ${player1.name}!")
-
-                                player1.x = Random.nextFloat() * (MAP_SIZE - 200) + 100
-                                player1.y = Random.nextFloat() * (MAP_SIZE - 200) + 100
-                                player1.radius = 30f
-                                player1.isAlive = true
-                            }
-                        }
-                    }
-                }
-            }
+            // Обработка очереди воскрешения
+            processRespawnQueue()
 
         } catch (e: Exception) {
             Log.e("GameServer", "Update error: ${e.message}")
         }
     }
 
+    // ============================================
+// СБОР ЕДЫ
+// ============================================
+    private fun collectFood() {
+        val toRemove = mutableListOf<Food>()
+        players.forEach { player ->
+            if (!player.isAlive || player.radius >= MAX_SIZE) return@forEach
+
+            foods.forEach { food ->
+                val dx = player.x - food.x
+                val dy = player.y - food.y
+                val distance = kotlin.math.sqrt(dx * dx + dy * dy)
+                if (distance < player.radius + food.radius) {
+                    player.radius += 0.5f
+                    player.score += 1 // +1 очко за еду
+                    toRemove.add(food)
+                }
+            }
+        }
+        foods.removeAll(toRemove)
+
+        if (foods.size < FOOD_COUNT) {
+            generateFood(FOOD_COUNT - foods.size)
+        }
+    }
+
+    // ============================================
+// ПРОВЕРКА МИН
+// ============================================
+    private fun checkMines() {
+        val minesToRemove = mutableListOf<Mine>()
+        mines.forEach { mine ->
+            players.forEach { player ->
+                if (!player.isAlive || player.id == mine.ownerId) return@forEach
+
+                val dx = player.x - mine.x
+                val dy = player.y - mine.y
+                val distance = kotlin.math.sqrt(dx * dx + dy * dy)
+
+                if (distance < player.radius + mine.radius) {
+                    // Взрыв!
+                    val damage = player.radius * MINE_DAMAGE
+                    player.radius -= damage
+                    minesToRemove.add(mine)
+
+                    // Владелец мины получает 5 очков
+                    val owner = players.find { it.id == mine.ownerId }
+                    owner?.let { it.score += 5 }
+
+                    Log.d("GameServer", "💥 ${player.name} подорвался на мине! Размер: ${player.radius}")
+
+                    if (player.radius < MIN_SIZE_TO_SURVIVE) {
+                        killPlayer(player, "мина")
+                    }
+                }
+            }
+        }
+        mines.removeAll(minesToRemove)
+    }
+
+    // ============================================
+// ПОЕДАНИЕ ИГРОКОВ
+// ============================================
+    private fun checkPlayerEat() {
+        val playersCopy = players.toList()
+        playersCopy.forEach { player1 ->
+            playersCopy.forEach { player2 ->
+                if (player1.id != player2.id && player2.isAlive && player1.isAlive) {
+                    val dx = player1.x - player2.x
+                    val dy = player1.y - player2.y
+                    val distance = kotlin.math.sqrt(dx * dx + dy * dy)
+
+                    if (distance < player1.radius + player2.radius) {
+                        if (player1.radius > player2.radius * 1.2f) {
+                            val gain = (player2.radius * 0.3f).coerceAtMost(MAX_SIZE - player1.radius)
+                            player1.radius += gain
+                            player1.score += 10 // +10 очков за убийство
+                            Log.d("GameServer", "🍽️ ${player1.name} ate ${player2.name}!")
+                            killPlayer(player2, "${player1.name}")
+
+                        } else if (player2.radius > player1.radius * 1.2f) {
+                            val gain = (player1.radius * 0.3f).coerceAtMost(MAX_SIZE - player2.radius)
+                            player2.radius += gain
+                            player2.score += 10 // +10 очков за убийство
+                            Log.d("GameServer", "🍽️ ${player2.name} ate ${player1.name}!")
+                            killPlayer(player1, "${player2.name}")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ============================================
+// СМЕРТЬ И ВОСКРЕШЕНИЕ
+// ============================================
+    private fun killPlayer(player: Player, reason: String) {
+        if (!player.isAlive) return
+
+        player.isAlive = false
+
+        // Отправляем клиенту сообщение о смерти
+        val deathMessage = gson.toJson(mapOf(
+            "death" to true,
+            "respawnTime" to 2000,
+            "reason" to reason
+        ))
+        clients[player.id]?.let { writer ->
+            try {
+                writer.println(deathMessage)
+                writer.flush()
+            } catch (e: Exception) {}
+        }
+
+        // Добавляем в очередь на воскрешение через 2 секунды
+        respawnQueue[player.id] = System.currentTimeMillis() + 2000
+
+        Log.d("GameServer", "💀 ${player.name} убит (${reason})")
+    }
+
+    private fun processRespawnQueue() {
+        val now = System.currentTimeMillis()
+        respawnQueue.entries.removeIf { (playerId, respawnTime) ->
+            if (now >= respawnTime) {
+                val player = players.find { it.id == playerId }
+                player?.let {
+                    // Воскрешаем в безопасном месте
+                    var newX: Float
+                    var newY: Float
+                    var attempts = 0
+                    do {
+                        newX = Random.nextFloat() * (MAP_SIZE - 200) + 100
+                        newY = Random.nextFloat() * (MAP_SIZE - 200) + 100
+                        attempts++
+                    } while (attempts < 50 && !isSafePosition(newX, newY))
+
+                    it.x = newX
+                    it.y = newY
+                    it.radius = 30f
+                    it.isAlive = true
+
+                    // Отправляем клиенту сообщение о воскрешении
+                    val respawnMessage = gson.toJson(mapOf("respawn" to true))
+                    clients[player.id]?.let { writer ->
+                        try {
+                            writer.println(respawnMessage)
+                            writer.flush()
+                        } catch (e: Exception) {}
+                    }
+
+                    Log.d("GameServer", "💫 ${it.name} воскрес в (${newX.toInt()}, ${newY.toInt()})")
+                }
+                true
+            } else false
+        }
+    }
+
+    private fun isSafePosition(x: Float, y: Float): Boolean {
+        val minDistance = 150f
+
+        // Проверяем расстояние до других игроков
+        players.forEach { player ->
+            if (!player.isAlive) return@forEach
+            val dx = x - player.x
+            val dy = y - player.y
+            if (kotlin.math.sqrt(dx * dx + dy * dy) < minDistance) {
+                return false
+            }
+        }
+
+        // Проверяем расстояние до мин
+        mines.forEach { mine ->
+            val dx = x - mine.x
+            val dy = y - mine.y
+            if (kotlin.math.sqrt(dx * dx + dy * dy) < minDistance) {
+                return false
+            }
+        }
+
+        return true
+    }
+
     private fun broadcastState() {
         if (clients.isEmpty()) return
 
         try {
+            val topPlayers = players
+                .filter { it.isAlive }
+                .sortedByDescending { it.score }
+                .take(5)
+                .map { "${it.name}: ${it.score}" }
+
             val state = mapOf(
                 "players" to players.toList(),
                 "foods" to foods.toList(),
-                "mines" to mines.toList()
+                "mines" to mines.toList(),
+                "topPlayers" to topPlayers
             )
             val json = gson.toJson(state)
 
