@@ -26,13 +26,13 @@ class GameServer(private val port: Int = 8888) {
 
     private var isRunning = false
     private var counter = 0
-    private val SPEED = 5f
-    private val FOOD_COUNT = 50
+    private val SPEED = 4f
+    private val FOOD_COUNT = 100
     private val MAX_SIZE = 400f
-    private val MAP_SIZE = 2000f
+    private val MAP_SIZE = 4000f
     private val MINE_RADIUS_RATIO = 0.5f
     private val MINE_CHARGE_TIME = 1f // секунд
-    private val MINE_PENALTY = 0.1f // 10%
+    private val MINE_PENALTY = 0.2f // 20%
     private val MINE_DAMAGE = 0.5f // 50%
     private val MIN_SIZE_TO_SURVIVE = 50f
 

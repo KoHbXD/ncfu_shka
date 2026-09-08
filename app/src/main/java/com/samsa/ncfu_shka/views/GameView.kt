@@ -37,13 +37,10 @@ class GameView(context: Context) : View(context) {
     private var directionY = 0f
     private var isMoving = false
 
-    // ============================================
-    // ЛОКАЛЬНЫЙ ПРОГРЕСС МИНЫ
-    // ============================================
     private var mineProgress = 0f
     private var isPlacingMine = false
     private var mineRunnable: Runnable? = null
-    private val MINE_CHARGE_TIME = 1f // секунда
+    private val MAP_SIZE = 4000f
 
     var onDirectionChanged: ((Float, Float) -> Unit)? = null
     var onPlaceMine: (() -> Unit)? = null
@@ -170,6 +167,8 @@ class GameView(context: Context) : View(context) {
 
         drawGrid(canvas)
 
+        drawMapBorder(canvas)
+
         // Еда
         foods.forEach { food ->
             val sx = food.x - viewX
@@ -273,6 +272,89 @@ class GameView(context: Context) : View(context) {
             canvas.drawText("Игроков: ${players.size}", 20f, 90f, paint)
             canvas.drawText("Еды: ${foods.size}", 20f, 130f, paint)
             canvas.drawText("Мин: ${mines.size}", 20f, 170f, paint)
+        }
+    }
+
+    private fun drawMapBorder(canvas: Canvas) {
+        // Левая граница
+        val leftX = 0f - viewX
+        val rightX = MAP_SIZE - viewX
+        val topY = 0f - viewY
+        val bottomY = MAP_SIZE - viewY
+
+        // Рисуем только если граница видна на экране
+        val borderVisible = leftX < width && rightX > 0 && topY < height && bottomY > 0
+
+        if (!borderVisible) return
+
+        // Толстая красная линия по краям
+        paint.color = Color.argb(150, 255, 0, 0)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 6f
+
+        // Левая граница
+        if (leftX in 0f..width.toFloat()) {
+            canvas.drawLine(leftX, topY.coerceAtLeast(0f), leftX, bottomY.coerceAtMost(height.toFloat()), paint)
+        }
+
+        // Правая граница
+        if (rightX in 0f..width.toFloat()) {
+            canvas.drawLine(rightX, topY.coerceAtLeast(0f), rightX, bottomY.coerceAtMost(height.toFloat()), paint)
+        }
+
+        // Верхняя граница
+        if (topY in 0f..height.toFloat()) {
+            canvas.drawLine(leftX.coerceAtLeast(0f), topY, rightX.coerceAtMost(width.toFloat()), topY, paint)
+        }
+
+        // Нижняя граница
+        if (bottomY in 0f..height.toFloat()) {
+            canvas.drawLine(leftX.coerceAtLeast(0f), bottomY, rightX.coerceAtMost(width.toFloat()), bottomY, paint)
+        }
+
+        // ============================================
+        // УГЛЫ (для наглядности)
+        // ============================================
+        val cornerSize = 30f
+        paint.strokeWidth = 8f
+
+        // Левый верхний угол
+        if (leftX in -cornerSize..width.toFloat() && topY in -cornerSize..height.toFloat()) {
+            canvas.drawLine(leftX, topY, leftX + cornerSize, topY, paint)
+            canvas.drawLine(leftX, topY, leftX, topY + cornerSize, paint)
+        }
+
+        // Правый верхний угол
+        if (rightX in -cornerSize..width.toFloat() && topY in -cornerSize..height.toFloat()) {
+            canvas.drawLine(rightX, topY, rightX - cornerSize, topY, paint)
+            canvas.drawLine(rightX, topY, rightX, topY + cornerSize, paint)
+        }
+
+        // Левый нижний угол
+        if (leftX in -cornerSize..width.toFloat() && bottomY in -cornerSize..height.toFloat()) {
+            canvas.drawLine(leftX, bottomY, leftX + cornerSize, bottomY, paint)
+            canvas.drawLine(leftX, bottomY, leftX, bottomY - cornerSize, paint)
+        }
+
+        // Правый нижний угол
+        if (rightX in -cornerSize..width.toFloat() && bottomY in -cornerSize..height.toFloat()) {
+            canvas.drawLine(rightX, bottomY, rightX - cornerSize, bottomY, paint)
+            canvas.drawLine(rightX, bottomY, rightX, bottomY - cornerSize, paint)
+        }
+
+        // ============================================
+        // ПОДПИСЬ РАЗМЕРА КАРТЫ
+        // ============================================
+        if (topY in 0f..height.toFloat() && leftX in 0f..width.toFloat()) {
+            paint.color = Color.argb(200, 255, 255, 255)
+            paint.style = Paint.Style.FILL
+            paint.textSize = 18f
+            paint.textAlign = Paint.Align.CENTER
+            canvas.drawText("${MAP_SIZE.toInt()}x${MAP_SIZE.toInt()}",
+                leftX + 80f,
+                topY + 30f,
+                paint
+            )
         }
     }
 

@@ -41,6 +41,12 @@ class MainActivity : AppCompatActivity() {
         serviceDiscovery = ServiceDiscovery(this)
     }
 
+    override fun onResume() {
+        super.onResume()
+
+        foundServers.clear()
+    }
+
     private fun initViews() {
         etPlayerName = findViewById(R.id.etPlayerName)
         btnCreateGame = findViewById(R.id.btnCreateGame)
