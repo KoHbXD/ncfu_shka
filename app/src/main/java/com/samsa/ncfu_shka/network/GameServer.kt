@@ -40,7 +40,11 @@ class GameServer(private val port: Int = 8888) {
     private val MIN_SIZE_TO_SURVIVE = 50f
 
     private val bots = mutableListOf<Bot>()
-    private val BOT_COUNT = 5  // Количество ботов
+    private var botCount = 5
+
+    fun setBotCount(count: Int) {
+        botCount = count.coerceIn(0, 20)
+    }
 
     fun start() {
         try {
@@ -125,7 +129,7 @@ class GameServer(private val port: Int = 8888) {
     }
 
     private fun createBots() {
-        for (i in 1..BOT_COUNT) {
+        for (i in 1..botCount) {
             val bot = Bot(
                 id = "BOT_$i",
                 name = if (i == 1) "Самирчик" else if (i == 2) "Женька" else "Bot$i",

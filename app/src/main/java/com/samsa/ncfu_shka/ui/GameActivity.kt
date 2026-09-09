@@ -4,42 +4,38 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.view.WindowManager
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.samsa.ncfu_shka.controller.GameController
+import com.samsa.ncfu_shka.interfaces.GameStopper
 import com.samsa.ncfu_shka.network.GameClient
 import com.samsa.ncfu_shka.network.GameServer
 import com.samsa.ncfu_shka.network.ServiceDiscovery
 import com.samsa.ncfu_shka.views.GameView
-import kotlin.concurrent.thread
 
-class GameActivity : AppCompatActivity() {
+class GameActivity : AppCompatActivity(), GameStopper {
     private lateinit var gameView: GameView
-    private var client: GameClient? = null
+    private lateinit var controller: GameController
     private var gameServer: GameServer? = null
     private var serviceDiscovery: ServiceDiscovery? = null
-    private var serverIp: String = ""
-    private var playerName: String = ""
-    private var isConnecting = false
-    private var isGameActive = true
-    private var isHost = false
-    private var mineProgress = 0f
-
-    private val handler = Handler(Looper.getMainLooper())
-    private var gameLoopRunnable: Runnable? = null
 
     companion object {
         private const val TAG = "GameActivity"
 
-        fun newIntent(context: Context, serverIp: String, playerName: String, isHost: Boolean = false): Intent {
+        fun newIntent(
+            context: Context,
+            serverIp: String,
+            playerName: String,
+            isHost: Boolean = false,
+            botCount: Int = 5
+        ): Intent {
             return Intent(context, GameActivity::class.java).apply {
                 putExtra("SERVER_IP", serverIp)
                 putExtra("PLAYER_NAME", playerName)
                 putExtra("IS_HOST", isHost)
+                putExtra("BOT_COUNT", botCount)
             }
         }
     }
@@ -51,7 +47,6 @@ class GameActivity : AppCompatActivity() {
             WindowManager.LayoutParams.FLAG_FULLSCREEN,
             WindowManager.LayoutParams.FLAG_FULLSCREEN
         )
-
         window.decorView.systemUiVisibility = (
                 View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
                         View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
@@ -64,31 +59,51 @@ class GameActivity : AppCompatActivity() {
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
 
-        serverIp = intent.getStringExtra("SERVER_IP") ?: "127.0.0.1"
-        playerName = intent.getStringExtra("PLAYER_NAME") ?: "Player"
-        isHost = intent.getBooleanExtra("IS_HOST", false)
+        val serverIp = intent.getStringExtra("SERVER_IP") ?: "127.0.0.1"
+        val playerName = intent.getStringExtra("PLAYER_NAME") ?: "Player"
+        val isHost = intent.getBooleanExtra("IS_HOST", false)
+        val botCount = intent.getIntExtra("BOT_COUNT", 5)
 
         Log.d(TAG, "🚀 Starting GameActivity")
         Log.d(TAG, "📡 Server IP: $serverIp")
         Log.d(TAG, "👤 Player: $playerName")
         Log.d(TAG, "🏠 Is Host: $isHost")
-
-        // Скрываем панель навигации
-        window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                )
-
-        if (isHost) {
-            startServer()
-        }
+        Log.d(TAG, "🤖 Bot Count: $botCount")
 
         gameView = GameView(this)
         setContentView(gameView)
 
-        connectToServer()
+        val client = GameClient()
+
+        if (isHost) {
+            gameServer = GameServer().apply {
+                setBotCount(botCount)
+                start()
+                Log.d(TAG, "✅ Сервер запущен с $botCount ботами")
+            }
+
+            serviceDiscovery = ServiceDiscovery(this).apply {
+                registerService(
+                    port = 8888,
+                    onSuccess = { serviceName ->
+                        Log.d(TAG, "✅ Сервис зарегистрирован: $serviceName")
+                    },
+                    onError = { error ->
+                        Log.e(TAG, "❌ Ошибка регистрации: $error")
+                    }
+                )
+            }
+        }
+
+        controller = GameController(
+            context = this,
+            gameView = gameView,
+            client = client,
+            serverIp = serverIp,
+            playerName = playerName,
+            gameStopper = this
+        )
+        controller.start()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -103,156 +118,34 @@ class GameActivity : AppCompatActivity() {
         }
     }
 
-    private fun startServer() {
-        try {
-            if (gameServer != null) {
-                Log.w(TAG, "⚠️ Сервер уже запущен")
-                return
-            }
-
-            gameServer = GameServer()
-            gameServer?.start()
-            Log.d(TAG, "✅ Сервер запущен")
-
-            if (serviceDiscovery == null) {
-                serviceDiscovery = ServiceDiscovery(this)
-                serviceDiscovery?.registerService(
-                    port = 8888,
-                    onSuccess = { serviceName ->
-                        Log.d(TAG, "✅ Сервис зарегистрирован: $serviceName")
-                    },
-                    onError = { error ->
-                        Log.e(TAG, "❌ Ошибка регистрации: $error")
-                    }
-                )
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Ошибка запуска сервера: ${e.message}")
-            Toast.makeText(this, "Ошибка запуска сервера: ${e.message}", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    private fun connectToServer() {
-        if (isConnecting) return
-        isConnecting = true
-
-        //Toast.makeText(this, "Подключение к серверу...", Toast.LENGTH_SHORT).show()
-
-        thread {
-            try {
-                val newClient = GameClient()
-                newClient.onGameStateUpdate = { state ->
-                    runOnUiThread {
-                        if (isGameActive) {
-                            gameView.updateState(state)
-                        }
-                    }
-                }
-
-                val connected = newClient.connect(serverIp, 8888, playerName)
-
-                runOnUiThread {
-                    isConnecting = false
-
-                    if (!connected) {
-                        Toast.makeText(this, "Не удалось подключиться к серверу", Toast.LENGTH_LONG).show()
-                        finish()
-                        return@runOnUiThread
-                    }
-
-                    client = newClient
-
-                    newClient.playerId?.let { id ->
-                        gameView.setMyPlayerId(id)
-                        Log.d(TAG, "🎮 My ID: $id")
-                    }
-
-                    // ============================================
-                    // ОБРАБОТЧИКИ ДВИЖЕНИЯ
-                    // ============================================
-                    gameView.onDirectionChanged = { dx, dy ->
-                        thread {
-                            client?.sendUpdate(dx, dy)
-                        }
-                    }
-
-                    // ============================================
-                    // ОБРАБОТЧИКИ МИН
-                    // ============================================
-
-                    gameView.onPlaceMine = {
-                        Log.d(TAG, "💣 Мина установлена!")
-                        thread {
-                            client?.sendPlaceMine()
-                        }
-                    }
-
-                    startGameLoop()
-
-                    //Toast.makeText(this, "Игра запущена! Нажмите на экран для движения, два пальца для мины", Toast.LENGTH_LONG).show()
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    isConnecting = false
-                    Log.e(TAG, "Error: ${e.message}")
-                    Toast.makeText(this, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
-                    finish()
-                }
-            }
-        }
-    }
-
-    private fun startGameLoop() {
-        gameLoopRunnable = object : Runnable {
-            override fun run() {
-                if (!isGameActive) return
-
-                // Обновляем интерполяцию
-                gameView.updateInterpolation()
-
-                // Обновляем позицию
-                gameView.updatePosition()
-
-                handler.postDelayed(this, 16)
-            }
-        }
-        handler.post(gameLoopRunnable!!)
-    }
-
     override fun onDestroy() {
         super.onDestroy()
 
-        Log.d(TAG, "🛑 GameActivity уничтожается")
-        isGameActive = false
+        // Останавливаем контроллер
+        controller.stopGame()
 
-        gameLoopRunnable?.let { handler.removeCallbacks(it) }
+        // Останавливаем сервер и NSD (если были)
+        if (intent.getBooleanExtra("IS_HOST", false)) {
+            serviceDiscovery?.unregisterService()
+            serviceDiscovery = null
 
-        try {
-            client?.disconnect()
-        } catch (e: Exception) {}
-        client = null
-
-        if (isHost) {
-            try {
-                serviceDiscovery?.unregisterService()
-                serviceDiscovery?.cleanup()
-                serviceDiscovery = null
-
-                gameServer?.stop()
-                gameServer = null
-                Log.d(TAG, "✅ Сервер остановлен")
-            } catch (e: Exception) {
-                Log.e(TAG, "Ошибка остановки сервера: ${e.message}")
-            }
+            gameServer?.stop()
+            gameServer = null
+            Log.d(TAG, "✅ Сервер и NSD остановлены")
         }
 
         Log.d(TAG, "✅ GameActivity уничтожена")
     }
 
-    override fun onBackPressed() {
-        if (isHost) {
-            //Toast.makeText(this, "Остановка сервера...", Toast.LENGTH_SHORT).show()
+    override fun stopGame() {
+        // Останавливаем сервер и NSD
+        if (intent.getBooleanExtra("IS_HOST", false)) {
+            serviceDiscovery?.unregisterService()
+            serviceDiscovery = null
+            gameServer?.stop()
+            gameServer = null
+            Log.d(TAG, "✅ Сервер и NSD остановлены")
         }
-        super.onBackPressed()
+        finish()
     }
 }

@@ -1,10 +1,9 @@
 package com.samsa.ncfu_shka.network
 
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.samsa.ncfu_shka.interfaces.GameClientListener
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
@@ -17,35 +16,11 @@ class GameClient {
     private val gson = Gson()
     private var isConnected = false
     var playerId: String? = null
-    private val handler = Handler(Looper.getMainLooper())
-    private var pingRunnable: Runnable? = null
-    var onGameStateUpdate: ((Map<*, *>) -> Unit)? = null
-    var onDisconnect: (() -> Unit)? = null
 
-    fun sendMineStart() {
-        try {
-            if (!isConnected || writer == null) {
-                Log.e("GameClient", "❌ Не подключено")
-                return
-            }
-            writer?.println("{\"mine\":true}")
-            writer?.flush()
-        } catch (e: Exception) {
-            Log.e("GameClient", "❌ Send error: ${e.message}")
-        }
-    }
+    private var listener: GameClientListener? = null
 
-    fun sendMineStop() {
-        try {
-            if (!isConnected || writer == null) {
-                Log.e("GameClient", "❌ Не подключено")
-                return
-            }
-            writer?.println("{\"mine\":false}")
-            writer?.flush()
-        } catch (e: Exception) {
-            Log.e("GameClient", "❌ Send error: ${e.message}")
-        }
+    fun setListener(listener: GameClientListener) {
+        this.listener = listener
     }
 
     fun sendPlaceMine() {
@@ -94,12 +69,21 @@ class GameClient {
 
                             if (state.containsKey("kicked")) {
                                 Log.d("GameClient", "⛔ Кикнут с сервера")
-                                onDisconnect?.invoke()
+                                listener?.onDisconnect()
                                 disconnect()
                                 break
                             }
 
-                            onGameStateUpdate?.invoke(state)
+                            if (state.containsKey("death")) {
+                                val respawnTime = (state["respawnTime"] as? Number)?.toLong() ?: 2000
+                                listener?.onDeath(respawnTime)
+                            }
+
+                            if (state.containsKey("respawn")) {
+                                listener?.onRespawn()
+                            }
+
+                            listener?.onStateUpdate(state)
                         }
                     } catch (e: Exception) {
                         Log.e("GameClient", "Read error: ${e.message}")
@@ -109,7 +93,7 @@ class GameClient {
                 Log.d("GameClient", "📥 Read thread ended")
                 if (isConnected) {
                     Log.e("GameClient", "❌ Соединение потеряно")
-                    onDisconnect?.invoke()
+                    listener?.onDisconnect()
                     disconnect()
                 }
             }.start()

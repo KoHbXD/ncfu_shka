@@ -10,6 +10,7 @@ import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import com.google.gson.Gson
+import com.samsa.ncfu_shka.interfaces.GameViewListener
 import com.samsa.ncfu_shka.model.Food
 import com.samsa.ncfu_shka.model.Mine
 import com.samsa.ncfu_shka.model.Player
@@ -45,6 +46,12 @@ class GameView(context: Context) : View(context) {
 
     var onDirectionChanged: ((Float, Float) -> Unit)? = null
     var onPlaceMine: (() -> Unit)? = null
+
+    private var listener: GameViewListener? = null
+
+    fun setListener(listener: GameViewListener) {
+        this.listener = listener
+    }
 
     fun updateState(state: Map<*, *>) {
         try {
@@ -117,37 +124,13 @@ class GameView(context: Context) : View(context) {
         onDirectionChanged?.invoke(directionX, directionY)
     }
 
-    // ============================================
-    // ЛОКАЛЬНАЯ УСТАНОВКА МИНЫ
-    // ============================================
     private fun startMinePlacement() {
-        if (isPlacingMine) return
-        isPlacingMine = true
-        mineProgress = 0f
-
-        mineRunnable = object : Runnable {
-            override fun run() {
-                if (!isPlacingMine) {
-                    mineProgress = 0f
-                    invalidate()
-                    return
-                }
-
-                mineProgress += 0.05f // шаг 50ms
-                invalidate()
-
-                if (mineProgress >= 1f) {
-                    // Мина заряжена!
-                    isPlacingMine = false
-                    mineProgress = 0f
-                    onPlaceMine?.invoke()
-                    invalidate()
-                } else {
-                    handler.postDelayed(this, 50)
-                }
-            }
+        if (mineProgress >= 1f) {
+            isPlacingMine = false
+            mineProgress = 0f
+            listener?.onPlaceMine()
+            invalidate()
         }
-        handler.post(mineRunnable!!)
     }
 
     private fun stopMinePlacement() {
@@ -232,9 +215,6 @@ class GameView(context: Context) : View(context) {
             val name = if (isMyPlayer) "${player.name} (ты)" else player.name
             canvas.drawText(name, sx, sy - (player.radius*1.2f), paint)
 
-            // ============================================
-            // ПРОГРЕСС-БАР МИНЫ (локальный)
-            // ============================================
             if (isMyPlayer && mineProgress > 0f) {
                 val maxRadius = player.radius * 1.15f
                 val currentRadius = player.radius + (maxRadius - player.radius) * mineProgress
@@ -446,6 +426,6 @@ class GameView(context: Context) : View(context) {
         }
 
         isMoving = true
-        onDirectionChanged?.invoke(directionX, directionY)
+        listener?.onDirectionChanged(directionX, directionY)
     }
 }

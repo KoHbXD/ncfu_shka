@@ -257,8 +257,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun startGameActivity(serverIp: String, playerName: String, isHost: Boolean = false) {
-        val intent = GameActivity.newIntent(this, serverIp, playerName, isHost)
+    private fun startGameActivity(serverIp: String, playerName: String, isHost: Boolean = false, botCount: Int = 5) {
+        val intent = GameActivity.newIntent(this, serverIp, playerName, isHost, botCount)
         startActivity(intent)
     }
 
