@@ -24,6 +24,9 @@
         android:textColorHint="#888888"
         android:background="@android:drawable/editbox_background"
         android:padding="15dp"
+        android:maxLines="1"
+        android:singleLine="true"
+        android:maxLength="16"
         android:layout_marginBottom="15dp"/>
 
     <Button
