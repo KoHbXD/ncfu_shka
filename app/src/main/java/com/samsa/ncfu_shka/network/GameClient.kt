@@ -74,15 +74,6 @@ class GameClient {
                                 break
                             }
 
-                            if (state.containsKey("death")) {
-                                val respawnTime = (state["respawnTime"] as? Number)?.toLong() ?: 2000
-                                listener?.onDeath(respawnTime)
-                            }
-
-                            if (state.containsKey("respawn")) {
-                                listener?.onRespawn()
-                            }
-
                             listener?.onStateUpdate(state)
                         }
                     } catch (e: Exception) {
@@ -121,8 +112,6 @@ class GameClient {
             isConnected = false
         }
     }
-
-    fun isConnected(): Boolean = isConnected
 
     fun disconnect() {
         Log.d("GameClient", "Disconnecting...")

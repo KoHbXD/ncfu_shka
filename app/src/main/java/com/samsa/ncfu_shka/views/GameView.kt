@@ -44,9 +44,6 @@ class GameView(context: Context) : View(context) {
     private var mineRunnable: Runnable? = null
     private val MAP_SIZE = 4000f
 
-    var onDirectionChanged: ((Float, Float) -> Unit)? = null
-    var onPlaceMine: (() -> Unit)? = null
-
     private var listener: GameViewListener? = null
 
     fun setListener(listener: GameViewListener) {
@@ -121,16 +118,40 @@ class GameView(context: Context) : View(context) {
         if (!isMoving) return
         val length = sqrt(directionX * directionX + directionY * directionY)
         if (length == 0f) return
-        onDirectionChanged?.invoke(directionX, directionY)
     }
 
+    // Установка мины. Фактически GameView не устанавливает мину.
+    // Он рисует бар (красный шар внутри игрока) и уведомляет слушателе по завершению
+    // В свою очередь реализация установки мины находится в GameControll
+    // (GameControll отправляет уже на сервер запрос на установку. Слегка муторно, но так надо)
+    // Таким образом мы как бы изолируем каждый модуль - они напрямую не зависят друг от друга и не лезут друг к другу
     private fun startMinePlacement() {
-        if (mineProgress >= 1f) {
-            isPlacingMine = false
-            mineProgress = 0f
-            listener?.onPlaceMine()
-            invalidate()
+        if (isPlacingMine) return
+        isPlacingMine = true
+        mineProgress = 0f
+
+        mineRunnable = object : Runnable {
+            override fun run() {
+                if (!isPlacingMine) {
+                    mineProgress = 0f
+                    invalidate()
+                    return
+                }
+
+                mineProgress += 0.05f
+
+                if (mineProgress >= 1f) {
+                    isPlacingMine = false
+                    mineProgress = 0f
+                    listener?.onPlaceMine()
+                    invalidate()
+                } else {
+                    invalidate()
+                    handler.postDelayed(this, 50)
+                }
+            }
         }
+        handler.post(mineRunnable!!)
     }
 
     private fun stopMinePlacement() {

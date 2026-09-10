@@ -23,8 +23,7 @@ class GameServer(private val port: Int = 8888) {
     private val foods = CopyOnWriteArrayList<Food>()
     private val mines = CopyOnWriteArrayList<Mine>()
     private val directions = ConcurrentHashMap<String, Pair<Float, Float>>()
-    private val mineProgress = ConcurrentHashMap<String, Float>()
-    private val respawnQueue = ConcurrentHashMap<String, Long>() // playerId -> время воскрешения
+    private val respawnQueue = ConcurrentHashMap<String, Long>()
     private val gson = Gson()
 
     private var isRunning = false
@@ -34,7 +33,6 @@ class GameServer(private val port: Int = 8888) {
     private val MAX_SIZE = 400f
     private val MAP_SIZE = 4000f
     private val MINE_RADIUS_RATIO = 0.5f
-    private val MINE_CHARGE_TIME = 1f // секунд
     private val MINE_PENALTY = 0.2f // 20%
     private val MINE_DAMAGE = 0.5f // 50%
     private val MIN_SIZE_TO_SURVIVE = 50f
@@ -95,19 +93,6 @@ class GameServer(private val port: Int = 8888) {
                                         player.x = newX
                                         player.y = newY
                                     }
-                                }
-                            }
-
-                            // Обновление прогресса мины
-                            if (player.isPlacingMine) {
-                                val progress = mineProgress[player.id] ?: 0f
-                                val newProgress = (progress + deltaTime).coerceAtMost(MINE_CHARGE_TIME)
-                                mineProgress[player.id] = newProgress
-
-                                if (newProgress >= MINE_CHARGE_TIME) {
-                                    placeMine(player)
-                                    mineProgress[player.id] = 0f
-                                    player.isPlacingMine = false
                                 }
                             }
                         }
@@ -555,7 +540,6 @@ class GameServer(private val port: Int = 8888) {
             players.add(player)
             directions[player.id] = Pair(0f, 0f)
             clients[player.id] = writer
-            mineProgress[player.id] = 0f
             Log.d("GameServer", "✅ ${player.name} at (${player.x.toInt()}, ${player.y.toInt()})")
 
             writer.println(player.id)
@@ -587,7 +571,6 @@ class GameServer(private val port: Int = 8888) {
 
             clients.remove(player.id)
             directions.remove(player.id)
-            mineProgress.remove(player.id)
             players.remove(player)
             socket.close()
             Log.d("GameServer", "❌ ${player.name} disconnected")
@@ -615,7 +598,6 @@ class GameServer(private val port: Int = 8888) {
         foods.clear()
         mines.clear()
         directions.clear()
-        mineProgress.clear()
         bots.clear()
         Log.d("GameServer", "✅ Server stopped")
     }

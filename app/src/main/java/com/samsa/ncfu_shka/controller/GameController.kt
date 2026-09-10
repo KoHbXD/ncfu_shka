@@ -68,15 +68,6 @@ class GameController(
                         Log.d(TAG, "🎮 My ID: $id")
                     }
 
-                    gameView.onDirectionChanged = { dx, dy ->
-                        thread { client.sendUpdate(dx, dy) }
-                    }
-
-                    gameView.onPlaceMine = {
-                        Log.d(TAG, "💣 Мина установлена!")
-                        thread { client.sendPlaceMine() }
-                    }
-
                     startGameLoop()
 
                     Toast.makeText(context, "Игра запущена!", Toast.LENGTH_LONG).show()
@@ -118,20 +109,6 @@ class GameController(
         handler.post {
             Toast.makeText(context, "Соединение потеряно", Toast.LENGTH_LONG).show()
             stopGame()
-        }
-    }
-
-    // По сути - заглушка. В теории можно что-то допилить
-    override fun onDeath(respawnTime: Long) {
-        handler.post {
-            Toast.makeText(context, "💀 Вы умерли! Воскрешение через ${respawnTime / 1000} сек", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // Тоже заглушка.
-    override fun onRespawn() {
-        handler.post {
-            Toast.makeText(context, "💫 Вы воскресли!", Toast.LENGTH_SHORT).show()
         }
     }
 
